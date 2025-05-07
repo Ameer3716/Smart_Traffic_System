@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    {"id": "A", "name": "Intersection A"},
+    {"id": "B", "name": "Intersection B"},
+    {"id": "C", "name": "Intersection C"}
+  ],
+  "edges": [
+    {"source": "A", "target": "B", "base_travel_time": 10, "capacity": 100},
+    {"source": "B", "target": "A", "base_travel_time": 10, "capacity": 100},
+    {"source": "B", "target": "C", "base_travel_time": 15, "capacity": 80},
+    {"source": "C", "target": "B", "base_travel_time": 15, "capacity": 80},
+    {"source": "A", "target": "C", "base_travel_time": 25, "capacity": 60},
+    {"source": "C", "target": "A", "base_travel_time": 25, "capacity": 60}
+  ]
+}
