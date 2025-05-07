@@ -1,41 +1,51 @@
+// frontend/src/components/MapDisplay.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 
-const NODE_RADIUS = 20;
-const STROKE_WIDTH_DEFAULT = 3;
-const STROKE_WIDTH_ROUTE = 5;
-const ROUTE_COLORS = ['#FF6347', '#4682B4', '#32CD32', '#FFD700', '#6A5ACD']; // Tomato, SteelBlue, LimeGreen, Gold, SlateBlue
+const NODE_SIZE = 28;
+const VEHICLE_WIDTH = 8;
+const VEHICLE_LENGTH = 14;
+const ROAD_WIDTH = 6;
+const VEHICLE_PATH_HIGHLIGHT_WIDTH = 5;
 
-const MapDisplay = ({ nodes, edges, routes, roadConditions, svgWidth = 600, svgHeight = 400 }) => {
+const VEHICLE_COLORS = {
+    on_route: "fill-sky-500",
+    idle: "fill-orange-400",
+    arrived: "fill-emerald-500",
+    default: "fill-gray-500"
+};
+
+const MapDisplay = ({ nodes, edges, vehicles = [], roadConditions, svgWidth = 800, svgHeight = 600 }) => {
     const [nodePositions, setNodePositions] = useState({});
 
-    // Calculate node positions (simple circular layout)
+    // console.log('MapDisplay received roadConditions:', roadConditions); // For debugging
+
     useEffect(() => {
         if (nodes && nodes.length > 0) {
             const newPositions = {};
-            const radius = Math.min(svgWidth, svgHeight) * 0.35; // Adjusted radius for better spacing
             const centerX = svgWidth / 2;
             const centerY = svgHeight / 2;
+            const layoutRadius = Math.min(svgWidth, svgHeight) * 0.40; 
+            const padding = NODE_SIZE * 1.5;
 
             nodes.forEach((node, index) => {
-                // If nodes have x, y, use them, otherwise calculate
                 if (node.x !== undefined && node.y !== undefined) {
-                     // Simple scaling if x,y are provided, assuming they are in a relative coordinate system
-                    const minX = Math.min(...nodes.map(n => n.x || 0));
-                    const maxX = Math.max(...nodes.map(n => n.x || 0));
-                    const minY = Math.min(...nodes.map(n => n.y || 0));
-                    const maxY = Math.max(...nodes.map(n => n.y || 0));
-                    const rangeX = maxX - minX || 1;
-                    const rangeY = maxY - minY || 1;
-                    
+                    const allX = nodes.filter(n => n.x !== undefined).map(n => n.x);
+                    const allY = nodes.filter(n => n.y !== undefined).map(n => n.y);
+                    const minX = allX.length > 0 ? Math.min(...allX) : 0;
+                    const maxX = allX.length > 0 ? Math.max(...allX) : svgWidth;
+                    const minY = allY.length > 0 ? Math.min(...allY) : 0;
+                    const maxY = allY.length > 0 ? Math.max(...allY) : svgHeight;
+                    const rangeX = (maxX - minX) || 1;
+                    const rangeY = (maxY - minY) || 1;
                     newPositions[node.id] = {
-                        x: ((node.x - minX) / rangeX) * (svgWidth - NODE_RADIUS*4) + NODE_RADIUS*2,
-                        y: ((node.y - minY) / rangeY) * (svgHeight - NODE_RADIUS*4) + NODE_RADIUS*2,
+                        x: ((node.x - minX) / rangeX) * (svgWidth - padding * 2) + padding,
+                        y: ((node.y - minY) / rangeY) * (svgHeight - padding * 2) + padding,
                     };
-                } else { // Fallback to circular layout
-                    const angle = (index / nodes.length) * 2 * Math.PI - (Math.PI / 2); // Start from top
+                } else {
+                    const angle = (index / nodes.length) * 2 * Math.PI - (Math.PI / 2);
                     newPositions[node.id] = {
-                        x: centerX + radius * Math.cos(angle),
-                        y: centerY + radius * Math.sin(angle),
+                        x: centerX + layoutRadius * Math.cos(angle),
+                        y: centerY + layoutRadius * Math.sin(angle),
                     };
                 }
             });
@@ -44,26 +54,12 @@ const MapDisplay = ({ nodes, edges, routes, roadConditions, svgWidth = 600, svgH
     }, [nodes, svgWidth, svgHeight]);
 
     const getCongestionColor = (congestion) => {
-        if (congestion === undefined) return 'stroke-gray-400'; // No data
-        if (congestion > 0.75) return 'stroke-red-500';    // Heavy
-        if (congestion > 0.4) return 'stroke-yellow-500'; // Moderate
-        return 'stroke-green-500';                         // Light
+        if (congestion === undefined || congestion < 0) return 'stroke-slate-400';
+        if (congestion > 0.75) return 'stroke-red-600';    // Target for heavy
+        if (congestion > 0.4) return 'stroke-yellow-500'; // Target for moderate
+        return 'stroke-green-500';
     };
     
-    const getEdgeStrokeWidth = (edge) => {
-        // Example: make busier roads slightly thicker, or routes
-        // This can be expanded
-        const roadId = `${edge.source}-${edge.target}`;
-        const onRoute = routes.some(route => {
-            for(let i=0; i < route.path.length -1; i++){
-                if(route.path[i] === edge.source && route.path[i+1] === edge.target) return true;
-            }
-            return false;
-        });
-        return onRoute ? STROKE_WIDTH_ROUTE : STROKE_WIDTH_DEFAULT;
-    }
-
-
     const renderedEdges = useMemo(() => {
         if (!edges || Object.keys(nodePositions).length === 0) return null;
         return edges.map((edge, index) => {
@@ -73,13 +69,18 @@ const MapDisplay = ({ nodes, edges, routes, roadConditions, svgWidth = 600, svgH
 
             const roadId = `${edge.source}-${edge.target}`;
             const condition = roadConditions ? roadConditions[roadId] : null;
-            const congestion = condition ? condition.current_congestion : undefined;
-            const colorClass = getCongestionColor(congestion);
-            
-            // Calculate offset for two-way streets if they are separate entries
-            // For simplicity, this basic version might draw them on top of each other
-            // A more advanced version would calculate slight offsets.
+            // Ensure 'current_congestion' is correctly accessed.
+            // Default to -1 or undefined if condition or current_congestion is missing.
+            const congestionValue = condition && typeof condition.current_congestion === 'number' 
+                                    ? condition.current_congestion 
+                                    : -1; 
+            const colorClass = getCongestionColor(congestionValue);
 
+            // Debugging log for each edge:
+            // if(roadId === "A-B" || roadId === "B-A") { // Example: focus on a specific road
+            //    console.log(`Edge ${roadId}: condition=`, condition, `congestionValue=`, congestionValue, `colorClass=`, colorClass);
+            // }
+            
             return (
                 <line
                     key={`edge-${edge.source}-${edge.target}-${index}`}
@@ -88,83 +89,124 @@ const MapDisplay = ({ nodes, edges, routes, roadConditions, svgWidth = 600, svgH
                     x2={posTarget.x}
                     y2={posTarget.y}
                     className={`${colorClass} transition-colors duration-300`}
-                    strokeWidth={getEdgeStrokeWidth(edge)}
-                    markerEnd="url(#arrowhead)" // Optional: if you define an arrowhead
+                    strokeWidth={ROAD_WIDTH}
+                    strokeLinecap="round"
+                    markerEnd="url(#arrowhead-road)"
                 />
             );
         });
-    }, [edges, nodePositions, roadConditions, routes]);
+    }, [edges, nodePositions, roadConditions]); // roadConditions is a key dependency
 
-    const renderedRoutes = useMemo(() => {
-        if (!routes || routes.length === 0 || Object.keys(nodePositions).length === 0) return null;
-        return routes.map((route, routeIndex) => {
-            const routePath = route.path;
-            if (!routePath || routePath.length < 2) return null;
+    // ... (renderedVehiclePaths, renderedVehicles, renderedNodes, and return statement are the same as previous)
+    // (Make sure these sections are copied from the previous correct version)
 
-            const d = routePath.slice(1).reduce((acc, nodeId, i) => {
-                const prevNodeId = routePath[i];
-                const posCurrent = nodePositions[nodeId];
-                const posPrev = nodePositions[prevNodeId];
-                if (!posCurrent || !posPrev) return acc; // Skip segment if node position missing
-                return `${acc} L ${posCurrent.x} ${posCurrent.y}`;
-            }, `M ${nodePositions[routePath[0]]?.x || 0} ${nodePositions[routePath[0]]?.y || 0}`);
-            
-            // Offset paths slightly for visibility if multiple routes overlap
-            const offset = (routeIndex % 5 - 2) * 2; // small offset
+    // Render highlighted paths for vehicles currently on route
+    const renderedVehiclePaths = useMemo(() => {
+        if (!vehicles || vehicles.length === 0 || Object.keys(nodePositions).length === 0) return null;
+        return vehicles
+            .filter(vehicle => vehicle.current_path && vehicle.current_path.length >= 2 && vehicle.state === 'on_route')
+            .map((vehicle) => {
+                const firstNodePos = nodePositions[vehicle.current_path[0]];
+                if (!firstNodePos) return null;
+
+                const d = vehicle.current_path.slice(1).reduce((acc, nodeId, i) => {
+                    const posCurrent = nodePositions[nodeId];
+                    const posPrev = nodePositions[vehicle.current_path[i]];
+                    if (!posCurrent || !posPrev) return acc;
+                    return `${acc} L ${posCurrent.x} ${posCurrent.y}`;
+                }, `M ${firstNodePos.x} ${firstNodePos.y}`);
+                
+                return (
+                    <path
+                        key={`route-path-highlight-${vehicle.id}`}
+                        d={d}
+                        className="stroke-blue-400 opacity-60"
+                        strokeWidth={VEHICLE_PATH_HIGHLIGHT_WIDTH}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                );
+        });
+    }, [vehicles, nodePositions]);
+
+    // Render Vehicle Objects
+    const renderedVehicles = useMemo(() => {
+        if (!vehicles || vehicles.length === 0 || Object.keys(nodePositions).length === 0) return null;
+
+        return vehicles.map(vehicle => {
+            let posX, posY, angle = 0;
+
+            if (vehicle.state === 'on_route' && vehicle.current_road_segment) {
+                const [sourceId, targetId] = vehicle.current_road_segment;
+                const sourcePos = nodePositions[sourceId];
+                const targetPos = nodePositions[targetId];
+
+                if (sourcePos && targetPos) {
+                    let progress = 0.5; 
+                    const roadId = `${sourceId}-${targetId}`;
+                    const condition = roadConditions ? roadConditions[roadId] : null;
+                    // Use current_travel_time from the specific road condition if available
+                    const segmentTravelTime = condition && typeof condition.current_travel_time === 'number' && condition.current_travel_time > 0
+                                            ? condition.current_travel_time
+                                            : (vehicle.path_cost / (vehicle.current_path?.length || 1)); // Fallback to avg time per segment
+
+                    if (segmentTravelTime > 0) {
+                         progress = Math.min(1.0, Math.max(0.0, vehicle.time_on_current_segment / segmentTravelTime));
+                    }
+                    
+                    posX = sourcePos.x + (targetPos.x - sourcePos.x) * progress;
+                    posY = sourcePos.y + (targetPos.y - sourcePos.y) * progress;
+                    angle = Math.atan2(targetPos.y - sourcePos.y, targetPos.x - sourcePos.x) * (180 / Math.PI);
+                } else { 
+                    const nodePos = nodePositions[vehicle.current_node_id];
+                    if (!nodePos) return null;
+                    posX = nodePos.x;
+                    posY = nodePos.y;
+                }
+            } else { 
+                const nodePos = nodePositions[vehicle.current_node_id];
+                if (!nodePos) return null;
+                posX = nodePos.x;
+                posY = nodePos.y;
+            }
+
+            const vehicleColor = VEHICLE_COLORS[vehicle.state] || VEHICLE_COLORS.default;
 
             return (
-                <path
-                    key={`route-${route.vehicle_id || routeIndex}`}
-                    d={d}
-                    stroke={ROUTE_COLORS[routeIndex % ROUTE_COLORS.length]}
-                    strokeWidth={STROKE_WIDTH_ROUTE -1} // Slightly thinner than edge highlight
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    transform={`translate(${offset}, ${offset})`} // Apply offset
-                    className="opacity-75 hover:opacity-100 transition-opacity"
-                />
+                <g key={`vehicle-group-${vehicle.id}`} transform={`translate(${posX}, ${posY}) rotate(${angle})`}>
+                    <rect 
+                        x={-VEHICLE_LENGTH / 2} y={-VEHICLE_WIDTH / 2} 
+                        width={VEHICLE_LENGTH} height={VEHICLE_WIDTH} 
+                        className={`${vehicleColor} stroke-black stroke-[0.5px]`}
+                        rx="2"
+                    />
+                    <rect 
+                        x={VEHICLE_LENGTH / 2 - 4} y={-VEHICLE_WIDTH / 2 + 1} 
+                        width="3" height={VEHICLE_WIDTH - 2}
+                        className="fill-slate-300 opacity-70" rx="1"
+                    />
+                </g>
             );
         });
-    }, [routes, nodePositions]);
+    }, [vehicles, nodePositions, roadConditions]); // roadConditions added as dependency for vehicle positioning too
 
-
+    // Render Nodes (Intersections/Places)
     const renderedNodes = useMemo(() => {
         if (!nodes || Object.keys(nodePositions).length === 0) return null;
         return nodes.map(node => {
             const pos = nodePositions[node.id];
             if (!pos) return null;
             return (
-                <g key={`node-group-${node.id}`}>
-                    <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={NODE_RADIUS}
-                        className="fill-blue-500 stroke-blue-700 stroke-2 hover:fill-blue-400 cursor-pointer"
-                        onClick={() => console.log("Clicked node:", node.id)} // Example interaction
-                    />
-                    <text
-                        x={pos.x}
-                        y={pos.y}
-                        textAnchor="middle"
-                        dy=".3em" // Vertical alignment
-                        className="fill-white font-semibold text-xs pointer-events-none"
-                    >
-                        {node.id}
-                    </text>
-                    <text
-                        x={pos.x}
-                        y={pos.y + NODE_RADIUS + 12} // Position label below node
-                        textAnchor="middle"
-                        className="fill-gray-700 text-xs pointer-events-none"
-                    >
-                        {node.name}
-                    </text>
+                <g key={`node-group-${node.id}`} transform={`translate(${pos.x}, ${pos.y})`}>
+                    <circle cx="0" cy="0" r={NODE_SIZE / 2} className="fill-slate-600 stroke-slate-800 stroke-2" />
+                    <circle cx="0" cy="0" r={NODE_SIZE / 2 * 0.6} className="fill-slate-400" />
+                    <text x="0" y={NODE_SIZE / 2 + 12} textAnchor="middle" className="fill-slate-800 text-[10px] font-medium pointer-events-none">{node.name || node.id}</text>
+                    <text x="0" y="0" textAnchor="middle" dy=".3em" className="fill-white text-[9px] font-semibold pointer-events-none">{node.id}</text>
                 </g>
             );
         });
     }, [nodes, nodePositions]);
-
 
     if (!nodes || nodes.length === 0) {
         return <p className="text-center text-gray-500 p-10">Map data not available or no nodes to display.</p>;
@@ -174,42 +216,24 @@ const MapDisplay = ({ nodes, edges, routes, roadConditions, svgWidth = 600, svgH
     }
 
     return (
-        <div className="border p-1 rounded-lg shadow-md bg-gray-100" style={{ width: svgWidth, height: svgHeight }}>
+        <div className="border p-1 rounded-lg shadow-md bg-slate-200" style={{ width: svgWidth, height: svgHeight, overflow: 'hidden' }}>
             <svg width="100%" height="100%" viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
                 <defs>
-                    <marker
-                        id="arrowhead"
-                        markerWidth="10"
-                        markerHeight="7"
-                        refX="8" // Adjust based on stroke width and desired appearance
-                        refY="3.5"
-                        orient="auto"
-                    >
-                        <polygon points="0 0, 10 3.5, 0 7" className="fill-current text-gray-500" />
+                    <marker id="arrowhead-road" markerWidth="8" markerHeight="8" refX="6" refY="2" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L0,4 L4,2 z" className="fill-current text-slate-500" />
                     </marker>
                 </defs>
-                
-                {/* Render Edges first so nodes and routes are on top */}
-                <g id="edges-layer">
-                    {renderedEdges}
-                </g>
-
-                {/* Render Routes on top of general edges */}
-                <g id="routes-layer">
-                    {renderedRoutes}
-                </g>
-
-                {/* Render Nodes on top */}
-                <g id="nodes-layer">
-                    {renderedNodes}
-                </g>
+                <g id="edges-layer">{renderedEdges}</g>
+                <g id="vehicle-paths-layer">{renderedVehiclePaths}</g>
+                <g id="nodes-layer">{renderedNodes}</g>
+                <g id="vehicles-layer">{renderedVehicles}</g>
             </svg>
-            <div className="p-2 text-xs text-gray-600">
-                Legend:
-                <span className="inline-block w-3 h-3 bg-green-500 mx-1"></span> Light Traffic
-                <span className="inline-block w-3 h-3 bg-yellow-500 mx-1"></span> Moderate
-                <span className="inline-block w-3 h-3 bg-red-500 mx-1"></span> Heavy
-                | Routes: Colored Lines
+            <div className="p-1.5 text-xs text-slate-700 flex flex-wrap justify-start items-center gap-x-3 gap-y-1">
+                <strong className="mr-1">Legend:</strong>
+                <span className="flex items-center"><span className="inline-block w-2.5 h-2.5 bg-green-500 mr-1 border border-slate-400 rounded-sm"></span>Light Traffic</span>
+                <span className="flex items-center"><span className="inline-block w-2.5 h-2.5 bg-yellow-500 mr-1 border border-slate-400 rounded-sm"></span>Moderate</span>
+                <span className="flex items-center"><span className="inline-block w-2.5 h-2.5 bg-red-600 mr-1 border border-slate-400 rounded-sm"></span>Heavy</span>
+                <span className="flex items-center"><span className={`inline-block w-3 h-1.5 ${VEHICLE_COLORS.on_route.replace("fill-","bg-")} mr-1 border border-black rounded-sm`}></span>Vehicle (Moving)</span>
             </div>
         </div>
     );

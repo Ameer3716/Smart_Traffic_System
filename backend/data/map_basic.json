@@ -1,8 +1,8 @@
 {
   "nodes": [
-    {"id": "A", "name": "Intersection A"},
-    {"id": "B", "name": "Intersection B"},
-    {"id": "C", "name": "Intersection C"}
+    {"id": "A", "name": "Central Station", "x": 100, "y": 100}, 
+    {"id": "B", "name": "Market Square", "x": 400, "y": 500},
+    {"id": "C", "name": "North Park", "x": 700, "y": 150}
   ],
   "edges": [
     {"source": "A", "target": "B", "base_travel_time": 10, "capacity": 100},

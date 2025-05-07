@@ -1,57 +1,66 @@
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional,Tuple
 
 # --- Input Models ---
 class Node(BaseModel):
     id: str
     name: str
-    # Optional: For visualization or more complex light logic
     x: Optional[float] = None
     y: Optional[float] = None
 
 class Edge(BaseModel):
     source: str
     target: str
-    base_travel_time: float # in seconds, or abstract units
-    capacity: Optional[int] = 100 # Max vehicles road can handle comfortably
+    base_travel_time: float # in seconds
+    capacity: Optional[int] = 100
 
 class CityMap(BaseModel):
     nodes: List[Node]
     edges: List[Edge]
 
 class TrafficUpdate(BaseModel):
-    road_id: str # e.g., "A-B"
-    congestion_level: float # 0.0 (clear) to 1.0 (jammed), or vehicle count
-    # Alternatively, directly pass vehicle_count if preferred
-    # vehicle_count: int
+    road_id: str # "source-target"
+    congestion_level: Optional[float] = None # 0.0 to 1.0
+    vehicle_count: Optional[int] = None
 
 class RouteRequest(BaseModel):
     start_node_id: str
     end_node_id: str
-    vehicle_id: Optional[str] = None # For tracking specific vehicles
+    vehicle_id: Optional[str] = None
+
+class VehicleStateEnum: # Using a class for enum-like strings
+    IDLE = "idle" # At an intersection, waiting for next move or new path
+    ON_ROUTE = "on_route" # Actively traversing a path
+    ARRIVED = "arrived" # Reached destination
 
 class Vehicle(BaseModel):
     id: str
-    current_node_id: str
-    destination_node_id: str
-    current_path: Optional[List[str]] = None
-    path_cost: Optional[float] = None
+    start_node_id: str # Original start
+    destination_node_id: str # Final destination
+    
+    # Dynamic state for simulation
+    current_node_id: str # Current intersection if idle/arrived, or start of current_road_segment if on_route
+    current_road_segment: Optional[Tuple[str, str]] = None # (source, target) of the road currently on
+    time_on_current_segment: float = 0.0 # Simulated seconds spent on current_road_segment
+    current_path_index: int = 0 # Index of the next node in current_path to reach
+    state: str = Field(default=VehicleStateEnum.IDLE)
+
+    # Path information
+    current_path: Optional[List[str]] = None # List of node IDs forming the path
+    path_cost: Optional[float] = None # Total estimated time for current_path
 
 # --- Output Models ---
 class TrafficLightTiming(BaseModel):
     intersection_id: str
-    # Phases: e.g., "NS_green_EW_red", "NS_red_EW_green"
-    # Or simpler: timings for each road entering the intersection
-    # For simplicity, let's assume phases and their green duration
-    # Example: {"road_A_to_X": 30, "road_B_to_X": 20}
-    # This needs careful design based on how intersections are modeled
     green_times: Dict[str, int] # road_id entering intersection -> green_seconds
 
 class SuggestedRoute(BaseModel):
     vehicle_id: Optional[str] = None
-    path: List[str] # List of node IDs
+    path: List[str]
     estimated_travel_time: float
 
 class SystemState(BaseModel):
-    routes: List[SuggestedRoute]
+    routes: List[SuggestedRoute] # This might become less relevant if vehicles directly report paths
     traffic_lights: List[TrafficLightTiming]
+    vehicles: List[Vehicle] # Add vehicles to system state
+    simulation_time: float # Current simulated time
